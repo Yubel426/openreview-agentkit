@@ -26,6 +26,11 @@ from urllib.parse import parse_qs, urlparse
 DEFAULT_BASEURL = "https://api2.openreview.net"
 ALLOWED_BASEURLS = frozenset({DEFAULT_BASEURL, "https://api2.dev.openreview.net"})
 _SKILL_ROOT = Path(__file__).resolve().parent.parent
+_CHECKOUT_ROOT = _SKILL_ROOT.parent.parent
+_PRIVATE_DATA_BOUNDARY = (
+    _CHECKOUT_ROOT if _SKILL_ROOT.parent.name == "skills"
+    and (_CHECKOUT_ROOT / "scripts" / "package_skill.py").is_file() else _SKILL_ROOT
+)
 _MAX_JSON_BYTES = 16 * 1024 * 1024
 _NOTE_ID = re.compile(r"^[A-Za-z0-9_-]{1,256}$")
 _SESSION_KEYS = {
@@ -110,7 +115,7 @@ def _safe_path(path: Any, *, private: bool = False) -> Path:
         except OSError:
             raise ToolError("LOCAL_IO_ERROR", "The local path cannot be inspected.") from None
     value = value.resolve(strict=False)
-    if private and (value == _SKILL_ROOT or _SKILL_ROOT in value.parents):
+    if private and (value == _PRIVATE_DATA_BOUNDARY or _PRIVATE_DATA_BOUNDARY in value.parents):
         raise ToolError(
             "UNSAFE_PATH", "Private session and response data must be stored outside the skill directory."
         )
@@ -240,7 +245,10 @@ def classify_api_error(exc: Exception) -> ToolError:
         return ToolError("HUMAN_VERIFICATION_REQUIRED", "OpenReview requires human verification; complete it through OpenReview's normal interface.", details)
     if "expired" in text and any(s in text for s in ("token", "session", "jwt")):
         return ToolError("AUTH_EXPIRED", "The OpenReview session has expired; log in again.", details)
-    if status == 401 or any(s in text for s in ("invalid token", "invalid password", "invalid credentials", "login required", "jwt malformed", "unauthenticated")):
+    if status == 401 or any(s in text for s in (
+        "invalid token", "invalid password", "invalid username or password",
+        "invalid credentials", "login required", "jwt malformed", "unauthenticated",
+    )):
         return ToolError("AUTH_REQUIRED", "OpenReview did not accept the credentials; log in again.", details)
     if status == 403 or any(s in text for s in ("forbidden", "not authorized", "permission denied", "not allowed")):
         return ToolError("FORBIDDEN", "The current OpenReview account does not have permission for this operation.", details)
@@ -476,6 +484,10 @@ def get_client(baseurl=DEFAULT_BASEURL, session_file=None):
     raise ToolError("AUTH_REQUIRED", "Log in, import a token, or set OPENREVIEW_TOKEN (or both OPENREVIEW_USERNAME and OPENREVIEW_PASSWORD).")
 
 
+def get_public_client(baseurl=DEFAULT_BASEURL):
+    return _empty_client(normalize_baseurl(baseurl))
+
+
 def whoami(client=None, baseurl=DEFAULT_BASEURL, session_file=None) -> dict:
     client = client if client is not None else get_client(baseurl, session_file)
     actual = _validate_auth(client)
@@ -619,7 +631,7 @@ def read_forum(client, forum_id) -> dict:
         "replies": replies,
         "review_notes": [n for n in replies if n["note_type"] == "review"],
         "meta_review_notes": [n for n in replies if n["note_type"] == "meta_review"],
-        "scope": "All notes returned by get_all_notes(forum=...) that are visible to this authenticated account; hidden notes are not included.",
+        "scope": "All notes returned by get_all_notes(forum=...) that are visible to the current API client.",
         "classification_method": "note_type is a display hint inferred from invitation names, with author responses and meta-reviews checked before ordinary reviews; raw invitation IDs are retained.",
     }
 
@@ -642,11 +654,11 @@ def list_reply_invitations(client, forum_id, replyto=None) -> dict:
         if (reply.get("forum") or reply.get("id")) != root_id:
             raise ToolError("TARGET_MISMATCH", "The reply target belongs to a different paper forum.")
     account = profile_id(client)
+    # The API v2 list endpoint supports replyForum. Its replytoNote detail
+    # does not filter the list and can leave the SDK paging over unrelated forms.
     queries = [
         {"replyForum": root_id, "invitee": account},
-        {"replytoNote": target, "invitee": account},
         {"replyForum": root_id},
-        {"replytoNote": target},
     ]
     candidates: dict[str, dict] = {}
     attempts = []
@@ -678,7 +690,7 @@ def list_reply_invitations(client, forum_id, replyto=None) -> dict:
         "candidates": [candidates[k] for k in sorted(candidates)],
         "attempts": attempts,
         "limitations": [
-            "Discovery uses replyForum and replytoNote, with and without an invitee filter; it does not guess venue-specific invitation names.",
+            "Discovery uses replyForum with and without an invitee filter. Inspect the invitation to check whether it accepts this reply target.",
             "A returned invitation is only a visible candidate. This result does not establish permission to submit, the correct author signature, or current stage/deadline eligibility.",
             "An empty or partially failed search does not prove that no reply invitation exists. Inspect an exact invitation ID from the paper's OpenReview interface when needed.",
         ],

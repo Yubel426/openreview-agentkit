@@ -9,7 +9,7 @@ import types
 import unittest
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills" / "openreview-author" / "scripts"))
 import or_replies as replies
 from or_core import ToolError
 
@@ -286,6 +286,18 @@ class ReplyTests(unittest.TestCase):
         self.client.invitation["edit"]["note"]["id"] = "Review0001"
         self.assert_code("invalid_target", lambda: self.prepare())
         self.assertEqual(self.client.post_count, 0)
+
+    def test_public_comment_accepts_verified_profile_signature(self):
+        edit = self.client.invitation["edit"]
+        edit["signatures"] = {"param": {"items": [{"prefix": "~.*"}]}}
+        edit["note"]["readers"] = ["everyone"]
+        self.assert_code("signature_required", lambda: self.prepare(signature="~Other_Author1"))
+        draft = self.prepare(signature=self.client.profile.id)
+        note = replies.preview_reply(draft["draft_id"])["payload"]["note"]
+        self.assertEqual(note["signatures"], [self.client.profile.id])
+        self.assertEqual(note["readers"], ["everyone"])
+        self.assertEqual(self.client.post_count, 0)
+        self.assertEqual(self.submit(draft)["status"], "verified")
 
     def test_actual_sdk_note_serialization_offline(self):
         try:

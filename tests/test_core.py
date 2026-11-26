@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills" / "openreview-author" / "scripts"))
 import or_core as core
 
 
@@ -173,9 +173,11 @@ class CoreTests(unittest.TestCase):
         client = self.client()
         result = core.list_reply_invitations(client, "ForumOne", replyto="ReviewOne")
         self.assertEqual(len(result["candidates"]), 1)
-        self.assertEqual(len(result["candidates"][0]["matched_by"]), 4)
+        queries = [{"replyForum": "ForumOne", "invitee": "~Author_One1"}, {"replyForum": "ForumOne"}]
+        self.assertEqual(client.invitation_calls, queries)
+        self.assertEqual(result["candidates"][0]["matched_by"], queries)
+        self.assertEqual(result["replyto"], "ReviewOne")
         self.assertFalse(result["candidates"][0]["can_submit_verified"])
-        self.assertIn({"replytoNote": "ReviewOne", "invitee": "~Author_One1"}, client.invitation_calls)
         with self.assertRaises(core.ToolError) as caught:
             core.list_reply_invitations(client, "ForumOne", replyto="OtherReview")
         self.assertEqual(caught.exception.code, "TARGET_MISMATCH")

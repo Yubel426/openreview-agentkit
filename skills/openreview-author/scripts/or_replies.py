@@ -208,7 +208,11 @@ def _validate(value, param, path, ctx):
             _fail("unsupported_schema", "The items specifier is supported only for arrays.")
         items = param["items"]
         def matches(item, rule):
-            return item == rule.get("value", _MISSING) or ("prefix" in rule and isinstance(item, str) and item.startswith(rule["prefix"]))
+            if item == rule.get("value", _MISSING):
+                return True
+            prefix = rule.get("prefix")
+            # OpenReview uses suffix wildcards in prefixes such as "~.*".
+            return isinstance(prefix, str) and isinstance(item, str) and item.startswith(prefix.removesuffix(".*"))
         if any(not any(matches(item, rule) for rule in items) for item in value):
             _fail("invalid_content", "An array item is not permitted by the invitation.", path="/".join(path))
         if any(not rule.get("optional", False) and not any(matches(item, rule) for item in value) for rule in items):

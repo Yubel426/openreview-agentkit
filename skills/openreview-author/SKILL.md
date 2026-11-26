@@ -1,6 +1,6 @@
 ---
 name: openreview-author
-description: "Authenticate to OpenReview, read a user's paper reviews and discussion, inspect venue reply forms, prepare text or PDF author responses, and submit or update an explicitly approved response through the official API v2. Use for OpenReview login, reading my reviews, rebuttal, author response, replying to a reviewer, uploading a rebuttal PDF, or verifying whether a reply was submitted."
+description: "Sign in to OpenReview, read paper reviews and discussion, inspect reply forms, and prepare or submit approved author responses and rebuttal PDFs through the OpenReview API."
 ---
 
 # OpenReview Author
@@ -9,26 +9,29 @@ Use the bundled Python tool to operate OpenReview as the author. Keep the final 
 
 ## Entry point
 
-Resolve this skill's current directory from the loaded SKILL.md; the directory may be renamed after installation. Use a task variable OPENREVIEW_SKILL_DIR for that directory, and the same Python interpreter for installation and commands:
+Resolve this skill's directory from the loaded SKILL.md and use it as `OPENREVIEW_SKILL_DIR`. Use the Python environment that has the bundled requirements installed. Run `doctor` with Python 3 to find the managed runtime. If its interpreter is unavailable or lacks the SDK and the current interpreter also lacks it, run `setup` once.
 
 ```bash
-python "$OPENREVIEW_SKILL_DIR/scripts/openreview_tool.py" --help
-python "$OPENREVIEW_SKILL_DIR/scripts/openreview_tool.py" doctor
-python -m pip install -r "$OPENREVIEW_SKILL_DIR/requirements.txt"
+python3 "$OPENREVIEW_SKILL_DIR/scripts/openreview_tool.py" doctor
+python3 "$OPENREVIEW_SKILL_DIR/scripts/openreview_tool.py" setup
 ```
 
-Require Python 3.9+ on Linux/macOS or WSL. Prefer a dedicated virtual environment outside the installed skill. The dependency is pinned to the SDK version verified for this release. Operational commands return JSON; help prints usage. Global options such as --baseurl, --session-file, and --output precede the command. --output saves a result privately to a new file. Read all tool limitations and unresolved schema fields: preview success is not server acceptance.
+Use the absolute `python_executable` returned by `setup` or the configured interpreter in subsequent shell calls. The examples below use `python` for that interpreter. Require Python 3.9+ on Linux, macOS, or WSL. Operational commands return JSON. Global options such as `--baseurl`, `--session-file`, and `--output` precede the command. `--output` saves a result privately to a new file.
 
 Keep credentials and frozen drafts outside the skill, by default in ~/.config/openreview-author (override with OR_AUTHOR_HOME). Never include sessions, real reviews, or author drafts in installed skill files or examples.
 
+An uploaded skill runs in its host's environment. Live CLI commands need Python, access to the OpenReview API, and an authorized session in that environment. If the host lacks any of these, work from a forum JSON export or review text the author is allowed to share. Draft the response in chat and leave live checks or submission to the local CLI.
+
 ## 1. Authenticate
 
-Check an existing session with whoami before asking the user to log in again:
+For public reviews, use `pull --forum '<forum URL or ID>' --public`; skip authentication. If the user requests private reviews or a reply, check an existing session with `whoami` before asking the user to log in again:
 
 ```bash
 python "$OPENREVIEW_SKILL_DIR/scripts/openreview_tool.py" whoami
 python "$OPENREVIEW_SKILL_DIR/scripts/openreview_tool.py" login
 ```
+
+If OpenReview requires human verification for a public API request, retry through an authorized session after completing OpenReview's normal login. If the request remains blocked, use the public forum in the browser or ask for a permitted export.
 
 For first login, have the user run login in a private interactive terminal in the same environment as the agent. The tool prompts for the password, follows SDK MFA, and saves a private session. Never request passwords, tokens, or TOTP seeds in chat. If this surface has no private terminal handoff, provide the command and continue useful account-free preparation; do not invent a login UI.
 
