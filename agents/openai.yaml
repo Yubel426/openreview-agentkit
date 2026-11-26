@@ -1,0 +1,13 @@
+interface:
+  display_name: OpenReview 助手
+  short_description: 登录 OpenReview、读取评审，并在确认后提交作者回复
+  default_prompt: 使用 $openreview-author 读取这篇论文的评审，准备作者回复，并在我确认后提交。
+  icon_small: assets/icon.svg
+  icon_large: assets/icon.svg
+policy:
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas
+  allow_implicit_invocation: true
