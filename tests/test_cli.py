@@ -89,6 +89,26 @@ class CommandTests(unittest.TestCase):
         read.assert_called_once_with(client, "Forum123")
         auth.assert_not_called()
 
+    def test_submissions_uses_authenticated_client(self):
+        client = object()
+        with patch.object(core, "get_client", return_value=client) as auth:
+            with patch.object(core, "list_submissions", return_value={"submissions": []}) as list_papers:
+                code, data = self.invoke(["submissions"])
+        self.assertEqual(code, 0)
+        self.assertEqual(data["data"], {"submissions": []})
+        auth.assert_called_once()
+        list_papers.assert_called_once_with(client)
+
+    def test_public_pull_with_session_requests_filtered_output(self):
+        client = object()
+        with patch.object(core, "get_client", return_value=client) as auth:
+            with patch.object(core, "read_forum", return_value={"review_notes": []}) as read:
+                code, _ = self.invoke(["--session-file", "selected.json", "pull", "--forum", "Forum123",
+                                       "--public", "--use-session"])
+        self.assertEqual(code, 0)
+        self.assertEqual(auth.call_args.kwargs["session_file"], "selected.json")
+        read.assert_called_once_with(client, "Forum123", public_only=True)
+
     def test_doctor_distinguishes_managed_python_from_current_sdk(self):
         current_sdk = {"sdk_usable": True, "sdk_version": "current"}
         managed_sdk = {"sdk_usable": True, "sdk_version": "managed"}

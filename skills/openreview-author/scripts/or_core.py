@@ -592,6 +592,35 @@ def parse_note_id(value: str) -> str:
     return text
 
 
+def list_submissions(client) -> dict:
+    """List API v2 venue submissions attributed to the authenticated profile."""
+    account = profile_id(client)
+    site = "https://openreview.net" if normalize_baseurl(client.baseurl) == DEFAULT_BASEURL else "https://dev.openreview.net"
+    submissions = {}
+    for author_field in ("authorids", "authors.username"):
+        for obj in api_call(client.get_all_notes, content={author_field: account}):
+            note = obj_json(obj)
+            forum_id = note.get("id")
+            if not forum_id or note.get("forum") != forum_id or note.get("replyto") or note.get("ddate"):
+                continue
+            content = note.get("content", {})
+            title = content.get("title", {}).get("value")
+            venue_id = content.get("venueid", {}).get("value")
+            invitations = note.get("invitations", [])
+            actions = {invitation.rsplit("/-/", 1)[-1].casefold() for invitation in invitations}
+            if not title or "record" in actions or not (note.get("number") or venue_id or "submission" in actions):
+                continue
+            submissions[forum_id] = {
+                "forum_id": forum_id, "url": site + "/forum?id=" + forum_id, "title": title,
+                "number": note.get("number"), "domain": note.get("domain"),
+                "venue": content.get("venue", {}).get("value"), "venue_id": venue_id,
+                "submitted_at": note.get("cdate") or note.get("tcdate"),
+            }
+    return {"profile_id": account,
+            "submissions": sorted(submissions.values(), key=lambda note: (note["submitted_at"] or 0, note["forum_id"]), reverse=True),
+            "scope": "Visible OpenReview API v2 venue submissions attributed to this profile, newest first across stages. Venue labels are reported as supplied by OpenReview."}
+
+
 def _note_type(note: dict) -> str:
     invitations = note.get("invitations") or ([note["invitation"]] if note.get("invitation") else [])
     segments = {re.sub(r"[^a-z0-9]", "", part.lower()) for inv in invitations if isinstance(inv, str) for part in inv.split("/")}
@@ -608,19 +637,40 @@ def _note_type(note: dict) -> str:
     return "other"
 
 
-def read_forum(client, forum_id) -> dict:
+def _public_note(note: dict) -> dict | None:
+    if "everyone" not in (note.get("readers") or []) or note.get("nonreaders"):
+        return None
+    fields = ("id", "forum", "replyto", "cdate", "tcdate", "number", "invitations", "signatures", "readers")
+    public = {key: note[key] for key in fields if key in note}
+    public["content"] = {
+        key: field for key, field in (note.get("content") or {}).items()
+        if isinstance(field, dict) and not field.get("nonreaders")
+        and ("readers" not in field or "everyone" in (field["readers"] or []))
+    }
+    return public
+
+
+def read_forum(client, forum_id, *, public_only=False) -> dict:
     requested = parse_note_id(forum_id)
     requested_note = obj_json(api_call(client.get_note, requested))
     root_id = requested_note.get("forum") or requested_note.get("id")
     if not root_id:
         raise ToolError("API_ERROR", "The returned note does not identify its forum.")
     submission = requested_note if requested_note.get("id") == root_id else obj_json(api_call(client.get_note, root_id))
+    if public_only:
+        submission = _public_note(submission)
+        if submission is None or _public_note(requested_note) is None:
+            raise ToolError("NOT_FOUND", "The requested note or its forum is not publicly readable.")
     notes = api_call(lambda: list(client.get_all_notes(forum=root_id)))
     replies = []
     for obj in notes:
         note = obj_json(obj)
         if note.get("id") == root_id:
             continue
+        if public_only:
+            note = _public_note(note)
+            if note is None:
+                continue
         note["note_type"] = _note_type(note)
         replies.append(note)
     replies.sort(key=lambda n: (n.get("cdate") or n.get("tcdate") or 0, n.get("id") or ""))
@@ -631,7 +681,8 @@ def read_forum(client, forum_id) -> dict:
         "replies": replies,
         "review_notes": [n for n in replies if n["note_type"] == "review"],
         "meta_review_notes": [n for n in replies if n["note_type"] == "meta_review"],
-        "scope": "All notes returned by get_all_notes(forum=...) that are visible to the current API client.",
+        "scope": ("Only notes and content fields marked public without reader exclusions."
+                  if public_only else "All notes returned by get_all_notes(forum=...) that are visible to the current API client."),
         "classification_method": "note_type is a display hint inferred from invitation names, with author responses and meta-reviews checked before ordinary reviews; raw invitation IDs are retained.",
     }
 

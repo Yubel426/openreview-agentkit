@@ -31,10 +31,12 @@ def parser() -> argparse.ArgumentParser:
     a.add_argument("--expires-in", type=int, default=86400)
     s.add_parser("import-token", help="Import OPENREVIEW_TOKEN or enter a token privately")
     s.add_parser("whoami", help="Verify the current session against the API")
+    s.add_parser("submissions", help="List venue submissions for the signed-in profile")
     s.add_parser("logout", help="Remove this tool's local session, without remote changes")
     a = s.add_parser("pull", help="Read a paper and all replies visible to your account")
     a.add_argument("--forum", required=True, help="Forum ID or OpenReview forum URL")
-    a.add_argument("--public", action="store_true", help="Read only public information without a session")
+    a.add_argument("--public", action="store_true", help="Read public information without a session by default")
+    a.add_argument("--use-session", action="store_true", help="With --public, use an authorized session and return only public notes and fields")
     a = s.add_parser("invitations", help="Discover candidate reply forms; never auto-select")
     a.add_argument("--forum", required=True)
     a.add_argument("--replyto", help="Specific review/comment ID or URL")
@@ -203,9 +205,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         from or_replies import preview_reply
         return preview_reply(args.draft)
     if args.command == "pull" and args.public:
+        if args.use_session:
+            return core.read_forum(core.get_client(**kwargs), args.forum, public_only=True)
         if args.session_file:
-            raise core.ToolError("INVALID_ARGUMENTS", "Choose either --public or an authenticated session.")
+            raise core.ToolError("INVALID_ARGUMENTS", "Add --use-session to use the selected session with --public.")
         return core.read_forum(core.get_public_client(args.baseurl), args.forum)
+    if args.command == "pull" and args.use_session:
+        raise core.ToolError("INVALID_ARGUMENTS", "--use-session applies to --public reads.")
     # Validate local inputs before attempting authentication or any remote call.
     if args.command == "prepare":
         content = load_content(args)
@@ -215,6 +221,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                                     any(not isinstance(x, str) or not x for x in readers)):
             raise core.ToolError("INVALID_READERS", "Readers must be a JSON list of nonempty group IDs.")
     client = core.get_client(**kwargs)
+    if args.command == "submissions":
+        return core.list_submissions(client)
     if args.command == "pull":
         return core.read_forum(client, args.forum)
     if args.command == "invitations":

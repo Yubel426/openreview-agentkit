@@ -16,6 +16,7 @@ Keep only the agent you use after `--agent`. Live use requires Python 3.9 or lat
 
 Select `/openreview-author` in Claude Code or `$openreview-author` in Codex. Try one of these prompts:
 
+- “List my OpenReview submissions.”
 - “Read and summarize the reviews at [OpenReview forum URL].”
 - “Draft a reply to Reviewer 2 at [OpenReview forum URL]. Show me the reply and who can see it before submitting.”
 

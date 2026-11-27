@@ -169,6 +169,44 @@ class CoreTests(unittest.TestCase):
         with self.assertRaises(core.ToolError):
             core.parse_note_id("https://openreview.net.attacker.example/forum?id=ForumOne")
 
+    def test_list_submissions_checks_both_author_fields(self):
+        client = self.client()
+        legacy = {"id": "ForumOne", "forum": "ForumOne", "number": 7, "cdate": 100,
+                  "content": {"title": {"value": "First paper"}}}
+        current = {"id": "ForumTwo", "forum": "ForumTwo", "cdate": 200,
+                   "content": {"title": {"value": "Second paper"}, "venueid": {"value": "Venue/Under_Review"}}}
+        imported = {**legacy, "id": "Import", "forum": "Import", "invitations": ["DBLP.org/-/Record"]}
+        reply = {**legacy, "id": "ReplyToOne", "replyto": "ForumOne"}
+        with patch.object(client, "get_all_notes", side_effect=[[legacy, imported, reply], [current, legacy]]) as notes:
+            result = core.list_submissions(client)
+        self.assertEqual([c.kwargs for c in notes.call_args_list], [
+            {"content": {"authorids": "~Author_One1"}},
+            {"content": {"authors.username": "~Author_One1"}},
+        ])
+        papers = result["submissions"]
+        self.assertEqual([n["forum_id"] for n in papers], ["ForumTwo", "ForumOne"])
+        self.assertEqual(papers[0]["url"], "https://openreview.net/forum?id=ForumTwo")
+        self.assertEqual(papers[0]["venue_id"], "Venue/Under_Review")
+
+    def test_public_read_with_session_excludes_private_notes_and_fields(self):
+        client = self.client()
+        client.notes["ForumOne"]["readers"] = ["everyone"]
+        client.notes["ForumOne"]["details"] = {"writable": True}
+        client.notes["ReviewOne"].update(readers=["everyone"], content={
+            "comment": {"value": "Public review"},
+            "private": {"value": "Authors only", "readers": ["Venue/Authors"]},
+            "excluded": {"value": "Restricted", "nonreaders": ["Venue/Authors"]},
+        })
+        client.notes["MetaOne"]["readers"] = ["Venue/Authors"]
+        client.notes["ResponseOne"].update(readers=["everyone"], nonreaders=["Venue/Authors"])
+        result = core.read_forum(client, "ForumOne", public_only=True)
+        self.assertNotIn("details", result["submission"])
+        self.assertEqual([n["id"] for n in result["replies"]], ["ReviewOne"])
+        self.assertEqual(result["replies"][0]["content"], {"comment": {"value": "Public review"}})
+        with self.assertRaises(core.ToolError) as caught:
+            core.read_forum(client, "MetaOne", public_only=True)
+        self.assertEqual(caught.exception.code, "NOT_FOUND")
+
     def test_invitation_discovery_tracks_evidence_without_claiming_submit_permission(self):
         client = self.client()
         result = core.list_reply_invitations(client, "ForumOne", replyto="ReviewOne")

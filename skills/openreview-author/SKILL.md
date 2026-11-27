@@ -1,6 +1,6 @@
 ---
 name: openreview-author
-description: "Sign in to OpenReview, read paper reviews and discussion, inspect reply forms, and prepare or submit approved author responses and rebuttal PDFs through the OpenReview API."
+description: "List your OpenReview submissions, read paper reviews and discussion, and prepare or submit approved author replies and rebuttal PDFs through the OpenReview API."
 ---
 
 # OpenReview Author
@@ -9,13 +9,13 @@ Use the bundled Python tool to operate OpenReview as the author. Keep the final 
 
 ## Read public reviews and comments
 
-For a read-only request about public content, start with the OpenReview forum in the browser unless the user requests API output. Reuse a matching open tab, or open the official forum URL if browser tools are available. Read the requested notes and expand collapsed comments as needed. If the browser is signed in, use the forum's visibility labels to identify public notes. If the page contains the requested information, answer from the page without running the CLI or asking the user to sign in.
+Use `pull --forum '<forum URL or ID>' --public` to read through Python without signing in. When a direct web fetch of the official link is available, it can also supply the public reviews without setting up Python. Use the CLI or non-interactive web fetch for this workflow. Do not use Computer Use or browser UI automation.
 
-Use `pull --forum '<forum URL or ID>' --public` when the browser is unavailable, the page lacks the needed data, or the user explicitly needs API output. If the API returns `HUMAN_VERIFICATION_REQUIRED`, return immediately to the forum in the browser if available. If neither source provides the notes, explain what was accessible and ask for a direct note link or an export as needed. Skip `whoami` and `login` for public-only reads.
+If anonymous API and web fetch are blocked, use `pull --forum '<forum URL or ID>' --public --use-session` with an existing authorized CLI session. That command returns only public notes and content fields. If OpenReview requires verification and there is no valid CLI session, explain which request was blocked. The user can sign in via the local CLI or provide an export.
 
 ## Use the API when needed
 
-Resolve the directory containing this SKILL.md as `OPENREVIEW_SKILL_DIR`. For public API reads, private reviews, or reply actions, run `doctor` with Python 3:
+Resolve the directory containing this SKILL.md as `OPENREVIEW_SKILL_DIR`. When using the API, run `doctor` with Python 3:
 
 ```bash
 python3 "$OPENREVIEW_SKILL_DIR/scripts/openreview_tool.py" doctor
@@ -29,7 +29,7 @@ The CLI needs Python and access to the OpenReview API in the host's environment.
 
 ## 1. Authenticate
 
-For private reviews or a reply, check the existing session with `whoami` before asking the user to log in:
+Private reviews, your submission list, and replies use the authorized CLI session. Use the requested read command directly if a session is already configured. Check it with `whoami` when diagnosing authentication:
 
 ```bash
 python "$OPENREVIEW_SKILL_DIR/scripts/openreview_tool.py" whoami
@@ -40,9 +40,15 @@ For first login, have the user run login in a private interactive terminal in th
 
 Use import-token with an already securely configured OPENREVIEW_TOKEN, or existing authorized username/password environment variables. Never place secrets in command arguments. Bind credentials to the correct API host: production is https://api2.openreview.net; the official development host requires explicitly matching credentials. An expired session needs another login. logout removes the local session only, not a promised server-side revocation.
 
-## 2. Read the paper, reviews, and actual forms
+## 2. Find submissions and read reviews
 
-Obtain a forum URL or ID; a numeric submission number is not a forum ID. Ask for the URL only if it cannot be resolved from context.
+When the user asks for their current submissions or papers without giving a forum, start with the authenticated `submissions` command. It lists visible API v2 venue submissions newest first with their forum URLs and the venue labels reported by OpenReview. Use those labels when describing status. If the user asks about one paper and several match, resolve the target before continuing.
+
+```bash
+python "$OPENREVIEW_SKILL_DIR/scripts/openreview_tool.py" submissions
+```
+
+For a specified paper, use its forum URL or ID. A numeric submission number is not a forum ID. Inspect invitations only when the user needs a reply or wants to check a reply form.
 
 ```bash
 python "$OPENREVIEW_SKILL_DIR/scripts/openreview_tool.py" pull --forum '<forum URL or ID>'
