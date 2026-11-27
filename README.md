@@ -10,11 +10,11 @@ Use your agent to read OpenReview reviews, draft author responses, and submit re
 npx skills add https://github.com/Yubel426/openreview-agentkit
 ```
 
-Keep only the agent you use after `--agent`. Live use requires Python 3.9 or later and access to the OpenReview API.
+Live use requires Python 3.9 or later and access to the OpenReview API.
 
 ## Use
 
-Select `/openreview-author` in Claude Code or `$openreview-author` in Codex. Try one of these prompts:
+Try one of these prompts:
 
 - “List my OpenReview submissions.”
 - “Read and summarize the reviews at [OpenReview forum URL].”
