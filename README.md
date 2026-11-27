@@ -7,7 +7,7 @@ Use your agent to read OpenReview reviews, draft author responses, and submit re
 **Claude Code or Codex**
 
 ```bash
-npx skills add https://github.com/Yubel426/openreview-agentkit --skill openreview-author --agent claude-code codex --global
+npx skills add https://github.com/Yubel426/openreview-agentkit
 ```
 
 Keep only the agent you use after `--agent`. Live use requires Python 3.9 or later and access to the OpenReview API.
