@@ -89,6 +89,44 @@ class CommandTests(unittest.TestCase):
         read.assert_called_once_with(client, "Forum123")
         auth.assert_not_called()
 
+    def test_doctor_distinguishes_managed_python_from_current_sdk(self):
+        current_sdk = {"sdk_usable": True, "sdk_version": "current"}
+        managed_sdk = {"sdk_usable": True, "sdk_version": "managed"}
+        with tempfile.TemporaryDirectory() as folder:
+            state = Path(folder)
+            python = state / "runtime" / "bin" / "python"
+            with patch.object(core, "state_dir", return_value=state), patch.object(cli, "sdk_status", return_value=current_sdk):
+                code, result = self.invoke(["doctor"])
+                self.assertEqual(code, 0)
+                self.assertEqual(result["data"]["python_executable"], sys.executable)
+                self.assertIsNone(result["data"]["runtime_python"])
+                self.assertFalse(result["data"]["managed_runtime"]["exists"])
+
+                python.parent.mkdir(parents=True)
+                python.touch()
+                with patch.object(cli.subprocess, "run", return_value=SimpleNamespace(stdout=json.dumps(managed_sdk))) as probe:
+                    code, result = self.invoke(["doctor"])
+                self.assertEqual(code, 0)
+                self.assertEqual(probe.call_args.args[0][0], str(python))
+                self.assertEqual(result["data"]["managed_runtime"]["sdk_version"], "managed")
+                self.assertEqual(result["data"]["python_executable"], str(python))
+
+    def test_doctor_recommends_setup_when_managed_executable_cannot_run(self):
+        with tempfile.TemporaryDirectory() as folder:
+            state = Path(folder)
+            python = state / "runtime" / "bin" / "python"
+            python.parent.mkdir(parents=True)
+            python.touch(mode=0o600)
+            with patch.object(core, "state_dir", return_value=state), patch.object(cli, "sdk_status", return_value={"sdk_usable": False}):
+                code, result = self.invoke(["doctor"])
+        self.assertEqual(code, 0)
+        data = result["data"]
+        self.assertTrue(data["managed_runtime"]["exists"])
+        self.assertFalse(data["managed_runtime"]["runnable"])
+        self.assertIsNone(data["python_executable"])
+        self.assertEqual(data["next_action"], "setup")
+        self.assertEqual(data["setup_command"][-1], "setup")
+
 
 if __name__ == "__main__":
     unittest.main()

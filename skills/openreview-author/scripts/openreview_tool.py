@@ -140,20 +140,56 @@ def setup_runtime() -> dict[str, Any]:
     return {"python_executable": str(python), "cli": str(Path(__file__).resolve())}
 
 
+def sdk_status() -> dict[str, Any]:
+    try:
+        version = importlib.metadata.version("openreview-py")
+    except importlib.metadata.PackageNotFoundError:
+        version = None
+    usable = False
+    if version is not None:
+        try:
+            sdk = core.api_call(core.load_sdk)
+            usable = callable(getattr(getattr(sdk, "api", None), "OpenReviewClient", None))
+        except core.ToolError:
+            pass
+    return {"python": sys.version.split()[0], "sdk_version": version,
+            "sdk_installed": version is not None, "sdk_usable": usable}
+
+
+def inspect_managed_runtime(python: Path) -> dict[str, Any]:
+    details = {"path": str(python), "exists": python.is_file(), "runnable": False}
+    if not details["exists"]:
+        return details
+    probe = "import json; from openreview_tool import sdk_status; print(json.dumps(sdk_status()))"
+    try:
+        result = subprocess.run([str(python), "-c", probe], cwd=Path(__file__).resolve().parent,
+                                check=True, capture_output=True, text=True, timeout=10)
+        status = json.loads(result.stdout)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return details
+    return {**details, **status, "runnable": True} if isinstance(status, dict) else details
+
+
+def doctor() -> dict[str, Any]:
+    state = core.state_dir()
+    current = sdk_status()
+    managed = inspect_managed_runtime(state / "runtime" / "bin" / "python")
+    runtime = managed["path"] if managed.get("sdk_usable") else None
+    recommended = runtime or (sys.executable if current["sdk_usable"] else None)
+    return {**current, "current_python": sys.executable,
+            "managed_runtime": managed, "runtime_python": runtime,
+            "python_executable": recommended,
+            "next_action": "use_python" if recommended else "setup",
+            "setup_command": None if recommended else [sys.executable, str(Path(__file__).resolve()), "setup"],
+            "install": "python -m pip install -r <skill-dir>/requirements.txt",
+            "state_directory": str(state), "network_used": False}
+
+
 def run(args: argparse.Namespace) -> dict[str, Any]:
     if args.command == "setup":
         return setup_runtime()
     if args.command == "doctor":
-        try:
-            version = importlib.metadata.version("openreview-py")
-        except importlib.metadata.PackageNotFoundError:
-            version = None
-        state = core.state_dir()
-        return {"python": sys.version.split()[0], "sdk_version": version,
-                "sdk_installed": version is not None,
-                "install": "python -m pip install -r <skill-dir>/requirements.txt",
-                "runtime_python": str(state / "runtime" / "bin" / "python"),
-                "state_directory": str(state), "network_used": False}
+        return doctor()
     kwargs = {"baseurl": args.baseurl, "session_file": args.session_file}
     if args.command == "login":
         return core.login(username=args.username, expires_in=args.expires_in, **kwargs)
